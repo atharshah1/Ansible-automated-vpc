@@ -1,0 +1,119 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: Import VPC variables
+      include_vars: vars/vpc_config
+
+    - name: create vpc profile
+      ec2_vpc_net:
+        name: "{{vpc-name}}"
+        cidr_block: "{{vpc-cidr}}"
+        region: "{{region}}"
+        dns_support: yes
+        dns_hostnames: yes
+        tenancy: default
+        state: "{{state}}"
+      register: vpc-out
+
+
+    - name: create public subnet
+      ec2_vpc_subnet:
+        vpc_id: "{{vpc-out.vpc.id}}"
+        region: "{{region}}"
+        az: "{{z1}}"
+        state: "{{state}}"
+        cidr: "{{pubsub}}"
+        map_public: yes
+        resource_tags:
+          Name: autovpc-pubsub
+      register: pubsub-out
+
+
+    - name: create private subnet
+      ec2_vpc_subnet:
+        vpc_id: "{{vpc-out.vpc.id}}"
+        region: "{{region}}"
+        az: "{{z2}}"
+        state: "{{state}}"
+        cidr: "{{prisub}}"
+        resource_tags:
+          Name: autovpc-prisub
+      register: prisub-out
+
+
+    - name: Creating Internet gateway
+      ec2_vpc_igw:
+        vpc_id: "{{vpc-out.vpc.id}}"
+        region: "{{region}}"
+        state: "{{state}}"
+        resource_tags:
+          Namw: autovpc-igw
+      register: igw-out
+
+
+    - name: creating public route table
+      ec2_vpc_route_table:
+        vpc_id: "{{vpc-out.vpc.id}}"
+        region: "{{region}}"
+        tags: 
+          Name: public-route-table
+        subnets:
+          - "{{pubsub}}"
+        routes:
+          - dest: "0.0.0.0/0"
+            gateway_id: "{{igw-out.gateway_id}}"
+      register: pubrt-out
+
+
+    - name: creating NAT gateway
+      ec2_vpc_nat_gateway:
+        state: "{{state}}"
+        subnet_id: "{{pubsub-out.subnet.id}}"
+        wait: yes
+        region: "{{region}}"
+        if_exist_do_not_create: true
+      register: NAT-out
+
+
+    - name: creating Private route table
+      ec2_vpc_route_table:
+        vpc_id: "{{vpc-out.vpc.id}}"
+        region: "{{region}}"
+        tags: 
+          Name: private-route-table
+        subnets:
+          - "{{prisub}}"
+        routes:
+          - dest: "0.0.0.0/0"
+            gateway_id: "{{NAT-out.nat_gateway_id}}"
+      register: prirt-out
+
+
+    - debug:
+        var: "{{item}}"
+      loop:
+        - vpc-out.vpc.id
+        - pubsub-out.subnet.id
+        - prisub-out.subnet.id
+        - igw-out.gateway_id
+        - pubrt-out.route_table.id
+        - NAT-out.nat_gateway_id
+        - prirt-out.route_table.id
+
+    - set_fact:
+        vpcid: "{{vpc-out.vpc.id}}"
+        pubsubid: "{{pubsub-out.subnet.id}}"
+        prisubid: "{{prisub-out.subnet.id}}"
+        igwid: "{{igw-out.gateway_id}}"
+        pubrtid: "{{pubrt-out.route_table.id}}"
+        prirtid: "{{prirt-out.route_table.id}}"
+        natid: "{{NAT-out.nat_gateway_id}}"
+        cacheable: yes
+
+
+    - name: create var fileof vpc outputs
+      copy:
+        content: "vpcid: {{vpc-out.vpc.id}}\npubsubid: {{pubsub-out.subnet.id}}\nprisubid: {{prisub-out.subnet.id}}\nigwid: {{igw-out.gateway_id}}\npubrtid: {{pubrt-out.route_table.id}}\nprirtid: {{prirt-out.route_table.id}}\nnatid: {{NAT-out.nat_gateway_id}}\n"
+        dest: vars/output_config

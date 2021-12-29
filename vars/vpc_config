@@ -1,0 +1,20 @@
+vpc-name: "Automated-VPC"
+
+#VPC Range
+vpc-cidr: '192.168.0.0/16'
+
+#Subnets
+pubsub: 192.168.0.0/24
+prisub: 192.168.1.0/24
+
+#Region
+
+region: "ap-south-1"
+
+#Zones
+
+z1: ap-south-1a
+z2: ap-south-1b
+z3: ap-south-1c
+
+state: present
